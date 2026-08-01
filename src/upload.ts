@@ -1020,8 +1020,23 @@ async function loadAccount(
     messageTransport: MessageTransport,
     useCookieStore: boolean = true
 ) {
+    const hasSavedCookies = useCookieStore && fs.existsSync(cookiesFilePath)
+
+    if (hasSavedCookies) {
+        await page.goto(uploadURL)
+        try {
+            await page.waitForSelector('button#avatar-btn, #avatar-button, ytcp-button#avatar-button', {
+                timeout: 15 * 1000
+            })
+            messageTransport.log('Saved YouTube session loaded')
+            return
+        } catch {
+            throw new Error('Saved YouTube session is expired. Authenticate again before uploading.')
+        }
+    }
+
     try {
-        if (!fs.existsSync(cookiesFilePath) || !useCookieStore)
+        if (!hasSavedCookies || !useCookieStore)
             await login(page, credentials, messageTransport, useCookieStore)
     } catch (error: any) {
         if (error.message === 'Recapcha found') {

@@ -840,8 +840,22 @@ const updateVideoInfo = async (videoJSON, messageTransport) => {
     return messageTransport.log('successfully edited');
 };
 async function loadAccount(credentials, messageTransport, useCookieStore = true) {
+    const hasSavedCookies = useCookieStore && fs_extra_1.default.existsSync(cookiesFilePath);
+    if (hasSavedCookies) {
+        await page.goto(uploadURL);
+        try {
+            await page.waitForSelector('button#avatar-btn, #avatar-button, ytcp-button#avatar-button', {
+                timeout: 15 * 1000
+            });
+            messageTransport.log('Saved YouTube session loaded');
+            return;
+        }
+        catch (_a) {
+            throw new Error('Saved YouTube session is expired. Authenticate again before uploading.');
+        }
+    }
     try {
-        if (!fs_extra_1.default.existsSync(cookiesFilePath) || !useCookieStore)
+        if (!hasSavedCookies || !useCookieStore)
             await login(page, credentials, messageTransport, useCookieStore);
     }
     catch (error) {

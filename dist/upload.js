@@ -840,6 +840,10 @@ const updateVideoInfo = async (videoJSON, messageTransport) => {
     return messageTransport.log('successfully edited');
 };
 async function loadAccount(credentials, messageTransport, useCookieStore = true) {
+    if (!useCookieStore) {
+        await login(page, credentials, messageTransport, false);
+        return;
+    }
     const hasSavedCookies = useCookieStore && fs_extra_1.default.existsSync(cookiesFilePath);
     if (hasSavedCookies) {
         await page.goto(uploadURL);
@@ -977,7 +981,7 @@ async function login(localPage, credentials, messageTransport, useCookieStore = 
     if (!useCookieStore) {
         try {
             // Check if already logged in if we don't use normal cookie store
-            await localPage.waitForSelector('button#avatar-btn', {
+            await localPage.waitForFunction(() => window.location.hostname === 'studio.youtube.com', {
                 timeout: 15 * 1000
             });
             messageTransport.log(`Account already logged in`);

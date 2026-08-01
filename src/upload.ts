@@ -279,7 +279,7 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
     await textBoxes[0].evaluate((e) => ((e as any).__shady_native_textContent = ''))
     await textBoxes[0].type(title.substring(0, maxTitleLen))
     // Add the Description content
-    await textBoxes[0].evaluate((e) => ((e as any).__shady_native_textContent = ''))
+    await textBoxes[1].evaluate((e) => ((e as any).__shady_native_textContent = ''))
     await textBoxes[1].type(description.substring(0, maxDescLen));
 
     messageTransport.debug(`  >> ${videoJSON.title} - Title and description set`);

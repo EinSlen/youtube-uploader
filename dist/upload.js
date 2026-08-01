@@ -844,7 +844,7 @@ async function loadAccount(credentials, messageTransport, useCookieStore = true)
     if (hasSavedCookies) {
         await page.goto(uploadURL);
         try {
-            await page.waitForSelector('button#avatar-btn, #avatar-button, ytcp-button#avatar-button', {
+            await page.waitForFunction(() => window.location.hostname === 'studio.youtube.com', {
                 timeout: 15 * 1000
             });
             messageTransport.log('Saved YouTube session loaded');

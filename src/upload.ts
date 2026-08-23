@@ -223,33 +223,11 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
         throw new Error('Youtube returned an error : ' + errorMessage)
     }    
 
-    // Wait for upload to complete, but not checks
-    const uploadCompletePromise = page
-        .waitForXPath('//ytcp-video-upload-progress/span[contains(@class,"progress-label") and contains(text(),"Upload complete")]', {
-            timeout: 0
-        })
-        .then(() => 'uploadComplete');
-
-    // The current Studio content editor can replace the legacy uploads dialog
-    // before its old "Upload complete" label appears. The metadata editor and
-    // generated video link are a stronger signal that the file was accepted.
-    const metadataReadyPromise = page
-        .waitForFunction(
-            () => document.querySelectorAll('[id="textbox"]').length > 1 &&
-                Boolean(document.querySelector('[href^="https://youtu.be"], [href^="https://youtube.com/shorts"]')),
-            { timeout: 5 * 60 * 1000 }
-        )
-        .then(() => 'uploadComplete')
-
-    // Check if daily upload limit is reached
-    const dailyUploadPromise = page
-        .waitForXPath('//div[contains(text(),"Daily upload limit reached")]', { timeout: 0 })
-        .then(() => 'dailyUploadReached')
-    const uploadResult = await Promise.any([uploadCompletePromise, metadataReadyPromise, dailyUploadPromise])
-    if (uploadResult === 'dailyUploadReached') {
-        browser.close()
-        throw new Error('Daily upload limit reached')
-    }
+    // Current Studio moves the metadata editor to a new page after the file is
+    // accepted and leaves the original upload page on about:blank. Continue on
+    // the page that actually owns the title, description and generated link.
+    page = await waitForStudioEditorPage()
+    messageTransport.debug(`  >> ${videoJSON.title} - Studio metadata editor ready`)
 
     // Wait for upload to go away and processing to start, skip the wait if the user doesn't want it.
     if (!videoJSON.skipProcessingWait) {
@@ -1357,6 +1335,29 @@ async function securityBypass(localPage: Page, recoveryemail: string, messageTra
 
 async function sleep(ms: number) {
     return new Promise((sendMessage) => setTimeout(sendMessage, ms))
+}
+
+async function waitForStudioEditorPage(): Promise<Page> {
+    const deadline = Date.now() + 5 * 60 * 1000
+    while (Date.now() < deadline) {
+        for (const candidate of await browser.pages()) {
+            if (!candidate.url().includes('studio.youtube.com')) continue
+            const state = await candidate.evaluate(() => ({
+                dailyLimit: document.body?.innerText.includes('Daily upload limit reached') || false,
+                textboxes: document.querySelectorAll('[id="textbox"]').length,
+                hasVideoLink: Array.from(document.querySelectorAll('a')).some((anchor) =>
+                    /youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\//.test(anchor.href)
+                )
+            })).catch(() => null)
+            if (state?.dailyLimit) throw new Error('Daily upload limit reached')
+            if (state && state.textboxes > 1 && state.hasVideoLink) {
+                await candidate.setDefaultTimeout(timeout)
+                return candidate
+            }
+        }
+        await sleep(500)
+    }
+    throw new Error('YouTube Studio metadata editor did not open after accepting the video')
 }
 
 async function autoScroll(page: Page) {

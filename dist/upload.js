@@ -189,6 +189,7 @@ async function uploadVideo(videoJSON, messageTransport) {
     // accepted and leaves the original upload page on about:blank. Continue on
     // the page that actually owns the title, description and generated link.
     page = await waitForStudioEditorPage();
+    await dismissStudioOnboarding(page);
     messageTransport.debug(`  >> ${videoJSON.title} - Studio metadata editor ready`);
     // Wait for upload to go away and processing to start, skip the wait if the user doesn't want it.
     if (!videoJSON.skipProcessingWait) {
@@ -359,11 +360,7 @@ async function uploadVideo(videoJSON, messageTransport) {
             messageTransport.warn(`  >> ${videoJSON.title} - Failed setting game title`);
         }
     }
-    const nextBtnXPath = "//*[normalize-space(text())='Next']/parent::*[not(@disabled)]";
-    let next;
-    await page.waitForXPath(nextBtnXPath);
-    next = await page.$x(nextBtnXPath);
-    await next[0].click();
+    await clickEnabledStudioButton(page, '#next-button');
     if (videoJSON.isChannelMonetized) {
         try {
             await page.waitForSelector('#child-input ytcp-video-monetization', { visible: true, timeout: 10000 });
@@ -375,9 +372,7 @@ async function uploadVideo(videoJSON, messageTransport) {
             await page.waitForSelector('ytcp-video-monetization-edit-dialog.cancel-button-hidden .ytcp-video-monetization-edit-dialog #save-button', { visible: true });
             await page.click('ytcp-video-monetization-edit-dialog.cancel-button-hidden .ytcp-video-monetization-edit-dialog #save-button');
             await page.waitForTimeout(1500);
-            await page.waitForXPath(nextBtnXPath);
-            next = await page.$x(nextBtnXPath);
-            await next[0].click();
+            await clickEnabledStudioButton(page, '#next-button');
         }
         catch (_a) { }
         try {
@@ -386,25 +381,14 @@ async function uploadVideo(videoJSON, messageTransport) {
             await page.waitForTimeout(1500);
             await page.waitForSelector('.ytpp-self-certification-questionnaire .ytpp-self-certification-questionnaire #submit-questionnaire-button', { visible: true });
             await page.evaluate(() => document.querySelector('.ytpp-self-certification-questionnaire .ytpp-self-certification-questionnaire #submit-questionnaire-button').click());
-            await page.waitForXPath(nextBtnXPath);
-            next = await page.$x(nextBtnXPath);
-            await next[0].click();
+            await clickEnabledStudioButton(page, '#next-button');
             await page.waitForTimeout(1500);
         }
         catch (_b) { }
         messageTransport.debug(`  >> ${videoJSON.title} - Channel monetization set`);
     }
-    await sleep(100);
-    await page.waitForXPath(nextBtnXPath);
-    // click next button
-    await sleep(100);
-    next = await page.$x(nextBtnXPath);
-    await next[0].click();
-    await page.waitForXPath(nextBtnXPath);
-    // click next button
-    await sleep(100);
-    next = await page.$x(nextBtnXPath);
-    await next[0].click();
+    await clickEnabledStudioButton(page, '#next-button');
+    await clickEnabledStudioButton(page, '#next-button');
     if (videoJSON.publishType) {
         await page.waitForSelector('#privacy-radios *[name="' + videoJSON.publishType + '"]', { visible: true });
         await page.waitForTimeout(1000);
@@ -412,8 +396,7 @@ async function uploadVideo(videoJSON, messageTransport) {
         messageTransport.debug(`  >> ${videoJSON.title} - Publish type set`);
     }
     // Get publish button
-    const publishXPath = "//*[normalize-space(text())='Publish']/parent::*[not(@disabled)] | //*[normalize-space(text())='Save']/parent::*[not(@disabled)]";
-    await page.waitForXPath(publishXPath);
+    await waitForEnabledStudioButton(page, '#done-button');
     // save youtube upload link
     const videoBaseLink = 'https://youtu.be';
     const shortVideoBaseLink = 'https://youtube.com/shorts';
@@ -425,17 +408,21 @@ async function uploadVideo(videoJSON, messageTransport) {
         await page.waitForTimeout(500);
         uploadedLink = await page.evaluate((e) => e.getAttribute('href'), uploadedLinkHandle);
     } while (uploadedLink === videoBaseLink || uploadedLink === shortVideoBaseLink);
-    const closeDialogXPath = uploadAsDraft ? saveCloseBtnXPath : publishXPath;
-    let closeDialog;
-    for (let i = 0; i < 10; i++) {
-        try {
-            closeDialog = await page.$x(closeDialogXPath);
-            await closeDialog[0].click();
-            break;
+    if (uploadAsDraft) {
+        let closeDialog;
+        for (let i = 0; i < 10; i++) {
+            try {
+                closeDialog = await page.$x(saveCloseBtnXPath);
+                await closeDialog[0].click();
+                break;
+            }
+            catch (error) {
+                await page.waitForTimeout(5000);
+            }
         }
-        catch (error) {
-            await page.waitForTimeout(5000);
-        }
+    }
+    else {
+        await clickEnabledStudioButton(page, '#done-button');
     }
     // Prechecks Dialog
     try {
@@ -1126,6 +1113,33 @@ async function waitForStudioEditorPage() {
         await sleep(500);
     }
     throw new Error('YouTube Studio metadata editor did not open after accepting the video');
+}
+async function dismissStudioOnboarding(activePage) {
+    const dismissButton = await activePage.$('#dismiss-button');
+    if (!dismissButton)
+        return;
+    const visible = await dismissButton.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.width > 0 && bounds.height > 0;
+    });
+    if (!visible)
+        return;
+    await dismissButton.click();
+    await sleep(300);
+}
+async function waitForEnabledStudioButton(activePage, selector) {
+    await dismissStudioOnboarding(activePage);
+    await activePage.waitForFunction((buttonSelector) => {
+        const button = document.querySelector(buttonSelector);
+        return (button !== null &&
+            !button.hasAttribute('disabled') &&
+            button.getAttribute('aria-disabled') !== 'true');
+    }, { timeout }, selector);
+}
+async function clickEnabledStudioButton(activePage, selector) {
+    await waitForEnabledStudioButton(activePage, selector);
+    await activePage.click(selector);
+    await sleep(300);
 }
 async function autoScroll(page) {
     await page.evaluate(`(async () => {

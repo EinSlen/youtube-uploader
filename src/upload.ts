@@ -227,6 +227,7 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
     // accepted and leaves the original upload page on about:blank. Continue on
     // the page that actually owns the title, description and generated link.
     page = await waitForStudioEditorPage()
+    await dismissStudioOnboarding(page)
     messageTransport.debug(`  >> ${videoJSON.title} - Studio metadata editor ready`)
 
     // Wait for upload to go away and processing to start, skip the wait if the user doesn't want it.
@@ -408,12 +409,7 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
         
     }
 
-    const nextBtnXPath = "//*[normalize-space(text())='Next']/parent::*[not(@disabled)]"
-    let next
-
-    await page.waitForXPath(nextBtnXPath)
-    next = await page.$x(nextBtnXPath)
-    await next[0].click()
+    await clickEnabledStudioButton(page, '#next-button')
 
     if (videoJSON.isChannelMonetized) {
         try {
@@ -446,9 +442,7 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
 
             await page.waitForTimeout(1500)
 
-            await page.waitForXPath(nextBtnXPath)
-            next = await page.$x(nextBtnXPath)
-            await next[0].click()
+            await clickEnabledStudioButton(page, '#next-button')
         } catch {}
 
         try {
@@ -478,26 +472,15 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
                 ).click()
             )
 
-            await page.waitForXPath(nextBtnXPath)
-            next = await page.$x(nextBtnXPath)
-            await next[0].click()
+            await clickEnabledStudioButton(page, '#next-button')
 
             await page.waitForTimeout(1500)
         } catch {}
         messageTransport.debug(`  >> ${videoJSON.title} - Channel monetization set`);
     }
 
-    await sleep(100);
-    await page.waitForXPath(nextBtnXPath)
-    // click next button
-    await sleep(100);
-    next = await page.$x(nextBtnXPath)
-    await next[0].click()
-    await page.waitForXPath(nextBtnXPath)
-    // click next button
-    await sleep(100);
-    next = await page.$x(nextBtnXPath)
-    await next[0].click()
+    await clickEnabledStudioButton(page, '#next-button')
+    await clickEnabledStudioButton(page, '#next-button')
 
     if (videoJSON.publishType) {
         await page.waitForSelector('#privacy-radios *[name="' + videoJSON.publishType + '"]', { visible: true })
@@ -509,9 +492,7 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
     }
 
     // Get publish button
-    const publishXPath =
-        "//*[normalize-space(text())='Publish']/parent::*[not(@disabled)] | //*[normalize-space(text())='Save']/parent::*[not(@disabled)]"
-    await page.waitForXPath(publishXPath)
+    await waitForEnabledStudioButton(page, '#done-button')
     // save youtube upload link
     const videoBaseLink = 'https://youtu.be'
     const shortVideoBaseLink = 'https://youtube.com/shorts'
@@ -525,16 +506,19 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
         uploadedLink = await page.evaluate((e) => e.getAttribute('href'), uploadedLinkHandle)
     } while (uploadedLink === videoBaseLink || uploadedLink === shortVideoBaseLink)
 
-    const closeDialogXPath = uploadAsDraft ? saveCloseBtnXPath : publishXPath
-    let closeDialog
-    for (let i = 0; i < 10; i++) {
-        try {
-            closeDialog = await page.$x(closeDialogXPath)
-            await closeDialog[0].click()
-            break
-        } catch (error) {
-            await page.waitForTimeout(5000)
+    if (uploadAsDraft) {
+        let closeDialog
+        for (let i = 0; i < 10; i++) {
+            try {
+                closeDialog = await page.$x(saveCloseBtnXPath)
+                await closeDialog[0].click()
+                break
+            } catch (error) {
+                await page.waitForTimeout(5000)
+            }
         }
+    } else {
+        await clickEnabledStudioButton(page, '#done-button')
     }
 
     // Prechecks Dialog
@@ -1365,6 +1349,42 @@ async function waitForStudioEditorPage(): Promise<Page> {
         await sleep(500)
     }
     throw new Error('YouTube Studio metadata editor did not open after accepting the video')
+}
+
+async function dismissStudioOnboarding(activePage: Page) {
+    const dismissButton = await activePage.$('#dismiss-button')
+    if (!dismissButton) return
+
+    const visible = await dismissButton.evaluate((element) => {
+        const bounds = element.getBoundingClientRect()
+        return bounds.width > 0 && bounds.height > 0
+    })
+    if (!visible) return
+
+    await dismissButton.click()
+    await sleep(300)
+}
+
+async function waitForEnabledStudioButton(activePage: Page, selector: string) {
+    await dismissStudioOnboarding(activePage)
+    await activePage.waitForFunction(
+        (buttonSelector: string) => {
+            const button = document.querySelector(buttonSelector)
+            return (
+                button !== null &&
+                !button.hasAttribute('disabled') &&
+                button.getAttribute('aria-disabled') !== 'true'
+            )
+        },
+        { timeout },
+        selector
+    )
+}
+
+async function clickEnabledStudioButton(activePage: Page, selector: string) {
+    await waitForEnabledStudioButton(activePage, selector)
+    await activePage.click(selector)
+    await sleep(300)
 }
 
 async function autoScroll(page: Page) {

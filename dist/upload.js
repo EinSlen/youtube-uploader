@@ -147,13 +147,15 @@ async function uploadVideo(videoJSON, messageTransport) {
     await page.evaluate((el) => {
         el.textContent = 'oldclosse';
     }, closeBtn[0]);
-    const selectBtn = await page.$x(selectBtnXPath);
-    const [fileChooser] = await Promise.all([
-        page.waitForFileChooser(),
-        selectBtn[0].click() // button that triggers file selection
-    ]);
-    await fileChooser.accept([pathToFile]);
-    messageTransport.debug(`  >> ${videoJSON.title} - File chooser accepted`);
+    // YouTube Studio now keeps a hidden file input in the upload dialog.
+    // Assigning the file directly is both more reliable and compatible with
+    // headless Chromium; recent Studio builds no longer emit a native file
+    // chooser event when the "Select files" button is clicked.
+    const fileInput = await page.waitForSelector('input[type="file"]', { timeout: 60000 });
+    if (!fileInput)
+        throw new Error('YouTube Studio upload input not found');
+    await fileInput.uploadFile(pathToFile);
+    messageTransport.debug(`  >> ${videoJSON.title} - File assigned to the Studio upload input`);
     // Setup onProgress
     let progressChecker;
     let progress = { progress: 0, stage: types_1.ProgressEnum.Uploading };

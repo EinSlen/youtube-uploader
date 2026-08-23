@@ -1338,6 +1338,13 @@ async function sleep(ms: number) {
 }
 
 async function waitForStudioEditorPage(): Promise<Page> {
+    // Puppeteer 14 can miss target-created events emitted by recent Chromium
+    // builds. Reconnecting forces a fresh target enumeration that includes the
+    // Studio editor page opened after selecting the video.
+    const endpoint = browser.wsEndpoint()
+    const refreshedBrowser = await puppeteer.connect({ browserWSEndpoint: endpoint })
+    browser.disconnect()
+    browser = refreshedBrowser
     const deadline = Date.now() + 5 * 60 * 1000
     while (Date.now() < deadline) {
         for (const candidate of await browser.pages()) {

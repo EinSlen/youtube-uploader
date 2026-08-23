@@ -191,11 +191,18 @@ async function uploadVideo(videoJSON, messageTransport) {
         timeout: 0
     })
         .then(() => 'uploadComplete');
+    // The current Studio content editor can replace the legacy uploads dialog
+    // before its old "Upload complete" label appears. The metadata editor and
+    // generated video link are a stronger signal that the file was accepted.
+    const metadataReadyPromise = page
+        .waitForFunction(() => document.querySelectorAll('[id="textbox"]').length > 1 &&
+        Boolean(document.querySelector('[href^="https://youtu.be"], [href^="https://youtube.com/shorts"]')), { timeout: 5 * 60 * 1000 })
+        .then(() => 'uploadComplete');
     // Check if daily upload limit is reached
     const dailyUploadPromise = page
         .waitForXPath('//div[contains(text(),"Daily upload limit reached")]', { timeout: 0 })
         .then(() => 'dailyUploadReached');
-    const uploadResult = await Promise.any([uploadCompletePromise, dailyUploadPromise]);
+    const uploadResult = await Promise.any([uploadCompletePromise, metadataReadyPromise, dailyUploadPromise]);
     if (uploadResult === 'dailyUploadReached') {
         browser.close();
         throw new Error('Daily upload limit reached');

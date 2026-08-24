@@ -29,6 +29,31 @@ let browser: Browser, page: Page
 let cookiesDirPath: string
 let cookiesFilePath: string
 
+async function persistCurrentSessionCookies(messageTransport: MessageTransport) {
+    if (!browser || !cookiesDirPath || !cookiesFilePath) return
+
+    const pages = await browser.pages()
+    const studioPage = pages.find((candidate) => candidate.url().includes('studio.youtube.com'))
+    if (!studioPage) {
+        messageTransport.debug('No active YouTube Studio page found; refreshed session was not saved')
+        return
+    }
+
+    const cookiesObject = await studioPage.cookies(
+        'https://www.youtube.com',
+        'https://studio.youtube.com',
+        'https://accounts.google.com'
+    )
+    if (cookiesObject.length === 0) {
+        messageTransport.debug('No refreshed YouTube cookies found; session was not saved')
+        return
+    }
+
+    await fs.mkdir(cookiesDirPath, { recursive: true })
+    await fs.writeFile(cookiesFilePath, JSON.stringify(cookiesObject))
+    messageTransport.log('Refreshed YouTube session saved')
+}
+
 const invalidCharacters = ['<', '>']
 
 const uploadURL = 'https://www.youtube.com/upload?persist_gl=1&gl=US&persist_hl=1&hl=en'
@@ -105,11 +130,19 @@ export const upload = async (
             
         }
 
+        if (useCookieStore) await persistCurrentSessionCookies(messageTransport)
         await browser.close()
 
         return uploadedYTLink
     } catch (err) {
         messageTransport.error(err);
+        if (useCookieStore) {
+            try {
+                await persistCurrentSessionCookies(messageTransport)
+            } catch (persistError) {
+                messageTransport.warn(`Unable to save refreshed YouTube session: ${persistError}`)
+            }
+        }
         if (browser) await browser.close()
 
         throw err

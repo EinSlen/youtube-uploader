@@ -1070,12 +1070,18 @@ async function loadAccount(
         await page.goto(uploadURL)
         try {
             await page.waitForFunction(() => window.location.hostname === 'studio.youtube.com', {
-                timeout: 15 * 1000
+                timeout
             })
             messageTransport.log('Saved YouTube session loaded')
             return
         } catch {
-            throw new Error('Saved YouTube session is expired. Authenticate again before uploading.')
+            let hostname = 'unknown'
+            try {
+                hostname = new URL(page.url()).hostname || page.url()
+            } catch {}
+            throw new Error(
+                `Saved YouTube session did not reach Studio within ${timeout / 1000}s (landed on ${hostname}). Authenticate again only if the landing domain is accounts.google.com.`
+            )
         }
     }
 

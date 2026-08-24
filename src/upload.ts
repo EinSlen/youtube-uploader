@@ -49,9 +49,30 @@ async function persistCurrentSessionCookies(messageTransport: MessageTransport) 
         return
     }
 
+    let existingCookies: any[] = []
+    if (fs.existsSync(cookiesFilePath)) {
+        try {
+            const parsed = JSON.parse(await fs.readFile(cookiesFilePath, 'utf-8'))
+            if (Array.isArray(parsed)) existingCookies = parsed
+        } catch (error) {
+            messageTransport.warn(`Unable to read the previous YouTube cookie store: ${error}`)
+        }
+    }
+
+    // page.cookies() only returns cookies visible to the requested pages. A
+    // successful Studio upload can therefore omit Google session cookies that
+    // were present in the original authenticated store. Merge rotations into
+    // the complete store instead of replacing it with a destructive subset.
+    const mergedCookies = new Map<string, any>()
+    for (const cookie of [...existingCookies, ...cookiesObject]) {
+        mergedCookies.set(`${cookie.name}|${cookie.domain}|${cookie.path}`, cookie)
+    }
+
     await fs.mkdir(cookiesDirPath, { recursive: true })
-    await fs.writeFile(cookiesFilePath, JSON.stringify(cookiesObject))
-    messageTransport.log('Refreshed YouTube session saved')
+    await fs.writeFile(cookiesFilePath, JSON.stringify([...mergedCookies.values()]))
+    messageTransport.log(
+        `Refreshed YouTube session saved (${cookiesObject.length} refreshed, ${mergedCookies.size} total cookies)`
+    )
 }
 
 const invalidCharacters = ['<', '>']

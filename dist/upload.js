@@ -34,9 +34,28 @@ async function persistCurrentSessionCookies(messageTransport) {
         messageTransport.debug('No refreshed YouTube cookies found; session was not saved');
         return;
     }
+    let existingCookies = [];
+    if (fs_extra_1.default.existsSync(cookiesFilePath)) {
+        try {
+            const parsed = JSON.parse(await fs_extra_1.default.readFile(cookiesFilePath, 'utf-8'));
+            if (Array.isArray(parsed))
+                existingCookies = parsed;
+        }
+        catch (error) {
+            messageTransport.warn(`Unable to read the previous YouTube cookie store: ${error}`);
+        }
+    }
+    // page.cookies() only returns cookies visible to the requested pages. A
+    // successful Studio upload can therefore omit Google session cookies that
+    // were present in the original authenticated store. Merge rotations into
+    // the complete store instead of replacing it with a destructive subset.
+    const mergedCookies = new Map();
+    for (const cookie of [...existingCookies, ...cookiesObject]) {
+        mergedCookies.set(`${cookie.name}|${cookie.domain}|${cookie.path}`, cookie);
+    }
     await fs_extra_1.default.mkdir(cookiesDirPath, { recursive: true });
-    await fs_extra_1.default.writeFile(cookiesFilePath, JSON.stringify(cookiesObject));
-    messageTransport.log('Refreshed YouTube session saved');
+    await fs_extra_1.default.writeFile(cookiesFilePath, JSON.stringify([...mergedCookies.values()]));
+    messageTransport.log(`Refreshed YouTube session saved (${cookiesObject.length} refreshed, ${mergedCookies.size} total cookies)`);
 }
 const invalidCharacters = ['<', '>'];
 const uploadURL = 'https://www.youtube.com/upload?persist_gl=1&gl=US&persist_hl=1&hl=en';

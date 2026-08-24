@@ -525,11 +525,27 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
     await clickEnabledStudioButton(page, '#next-button')
 
     if (videoJSON.publishType) {
-        await page.waitForSelector('#privacy-radios *[name="' + videoJSON.publishType + '"]', { visible: true })
+        const publishType = videoJSON.publishType.toUpperCase()
+        const publishSelector = [
+            `tp-yt-paper-radio-button[name="${publishType}"]`,
+            `[role="radio"][name="${publishType}"]`,
+            `input[type="radio"][value="${publishType}"]`
+        ].join(', ')
+        const publishRadio = await page.waitForSelector(publishSelector, { visible: true, timeout }).catch(() => null)
 
-        await page.waitForTimeout(1000)
+        if (publishRadio) {
+            await publishRadio.click()
+        } else {
+            const publishLabel = publishType.charAt(0) + publishType.slice(1).toLowerCase()
+            const publishOptions = await page.$x(
+                `//*[normalize-space(text())='${publishLabel}']/ancestor-or-self::*[@role='radio' or self::tp-yt-paper-radio-button][1]`
+            )
+            if (publishOptions.length === 0) {
+                throw new Error(`YouTube Studio ${publishLabel} visibility option not found`)
+            }
+            await page.evaluate((option) => (option as HTMLElement).click(), publishOptions[0])
+        }
 
-        await page.click('#privacy-radios *[name="' + videoJSON.publishType + '"]');
         messageTransport.debug(`  >> ${videoJSON.title} - Publish type set`);
     }
 
@@ -1439,7 +1455,9 @@ async function waitForEnabledStudioButton(activePage: Page, selector: string) {
 async function clickEnabledStudioButton(activePage: Page, selector: string) {
     await waitForEnabledStudioButton(activePage, selector)
     await activePage.click(selector)
-    await sleep(300)
+    // Studio keeps the same Next button mounted between steps. Give the new
+    // screen time to replace it before checking/clicking it again.
+    await sleep(1200)
 }
 
 async function autoScroll(page: Page) {

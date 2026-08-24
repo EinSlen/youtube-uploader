@@ -298,21 +298,18 @@ async function uploadVideo(videoJSON, messageTransport) {
     }
     messageTransport.debug(`  >> ${videoJSON.title} - Kid restriction set`);
     // await page.waitForXPath('//ytcp-badge[contains(@class,"draft-badge")]//div[contains(text(),"Saved as private")]', { timeout: 0})
-    // await page.click("#toggle-button")
-    // Was having issues because of await page.$x("//*[normalize-space(text())='Show more']").click(), so I started messing with the line above.
-    // The issue was obviously not the line above but I either way created code to ensure that Show more has been pressed before proceeding.
-    let showMoreButton = await page.$('#toggle-button');
-    if (showMoreButton == undefined)
-        throw `uploadVideo - Toggle button not found.`;
-    else {
-        // console.log( "Show more start." )
-        while ((await page.$('ytcp-video-metadata-editor-advanced')) == undefined) {
-            // console.log( "Show more while." )
-            await showMoreButton.click();
-            await sleep(1000);
-        }
-        // console.log( "Show more finished." )
+    // Studio has changed the advanced editor wrapper several times. The old
+    // loop clicked "Show more" forever when that wrapper was renamed. Expand
+    // once and wait for a field that is actually used by the upload instead.
+    const advancedEditorSelector = 'ytcp-video-metadata-editor-advanced, [aria-label="Tags"]';
+    if ((await page.$(advancedEditorSelector)) == undefined) {
+        const showMoreButton = await page.$('#toggle-button');
+        if (showMoreButton == undefined)
+            throw new Error('uploadVideo - Show more button not found.');
+        await showMoreButton.click();
+        await page.waitForSelector(advancedEditorSelector, { timeout: 15000 });
     }
+    messageTransport.debug(`  >> ${videoJSON.title} - Advanced metadata editor ready`);
     // Add tags
     if (tags) {
         //show more
@@ -404,10 +401,15 @@ async function uploadVideo(videoJSON, messageTransport) {
     await page.waitForSelector(uploadLinkSelector);
     const uploadedLinkHandle = await page.$(uploadLinkSelector);
     let uploadedLink;
+    const uploadedLinkDeadline = Date.now() + timeout;
     do {
         await page.waitForTimeout(500);
         uploadedLink = await page.evaluate((e) => e.getAttribute('href'), uploadedLinkHandle);
-    } while (uploadedLink === videoBaseLink || uploadedLink === shortVideoBaseLink);
+    } while ((uploadedLink === videoBaseLink || uploadedLink === shortVideoBaseLink) &&
+        Date.now() < uploadedLinkDeadline);
+    if (!uploadedLink || uploadedLink === videoBaseLink || uploadedLink === shortVideoBaseLink) {
+        throw new Error('YouTube Studio did not generate the uploaded video link in time');
+    }
     if (uploadAsDraft) {
         let closeDialog;
         for (let i = 0; i < 10; i++) {

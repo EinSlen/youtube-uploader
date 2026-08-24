@@ -380,22 +380,34 @@ async function uploadVideo(videoJSON: Video, messageTransport: MessageTransport)
     // loop clicked "Show more" forever when that wrapper was renamed. Expand
     // once and wait for a field that is actually used by the upload instead.
     const advancedEditorSelector = 'ytcp-video-metadata-editor-advanced, [aria-label="Tags"]'
-    if ((await page.$(advancedEditorSelector)) == undefined) {
-        const showMoreButton = await page.$('#toggle-button')
-        if (showMoreButton == undefined) throw new Error('uploadVideo - Show more button not found.')
-        await showMoreButton.click()
-        await page.waitForSelector(advancedEditorSelector, { timeout: 15000 })
+    let advancedEditorReady = (await page.$(advancedEditorSelector)) != undefined
+    if (!advancedEditorReady) {
+        const showMoreButtons = await page.$x(
+            "//*[normalize-space(text())='Show more']/ancestor-or-self::*[self::ytcp-button or self::button or @role='button'][1]"
+        )
+        const showMoreButton = showMoreButtons[0] || (await page.$('ytcp-button#toggle-button'))
+        if (showMoreButton != undefined) {
+            await showMoreButton.click()
+            advancedEditorReady =
+                (await page.waitForSelector(advancedEditorSelector, { timeout: 15000 }).catch(() => null)) != null
+        }
     }
-    messageTransport.debug(`  >> ${videoJSON.title} - Advanced metadata editor ready`)
+    if (advancedEditorReady) {
+        messageTransport.debug(`  >> ${videoJSON.title} - Advanced metadata editor ready`)
+    } else {
+        messageTransport.warn(`  >> ${videoJSON.title} - Advanced metadata editor unavailable; optional fields skipped`)
+    }
 
     // Add tags
-    if (tags) {
+    if (tags && advancedEditorReady) {
         //show more
         try {
             await page.focus(`[aria-label="Tags"]`)
             await page.type(`[aria-label="Tags"]`, tags.join(', ').substring(0, 495) + ', ')
-        } catch (err) {}
-        messageTransport.debug(`  >> ${videoJSON.title} - Tags set to ${tags.join(', ')}`);
+            messageTransport.debug(`  >> ${videoJSON.title} - Tags set to ${tags.join(', ')}`);
+        } catch (err) {
+            messageTransport.warn(`  >> ${videoJSON.title} - Tags field unavailable; tags skipped`)
+        }
     }
     // Set automatic locations to false
     if(videoJSON.automaticPlaces === false) {

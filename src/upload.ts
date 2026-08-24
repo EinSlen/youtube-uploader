@@ -1336,12 +1336,18 @@ async function waitForStudioEditorPage(): Promise<Page> {
             const state = await candidate.evaluate(() => ({
                 dailyLimit: document.body?.innerText.includes('Daily upload limit reached') || false,
                 textboxes: document.querySelectorAll('[id="textbox"]').length,
-                hasVideoLink: Array.from(document.querySelectorAll('a')).some((anchor) =>
-                    /youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\//.test(anchor.href)
+                hasMetadataEditor: Boolean(
+                    document.querySelector('ytcp-video-metadata-editor-basics') ||
+                    document.querySelector('ytcp-uploads-dialog')
                 )
             })).catch(() => null)
             if (state?.dailyLimit) throw new Error('Daily upload limit reached')
-            if (state && state.textboxes > 1 && state.hasVideoLink) {
+            // Studio does not always expose the generated video URL while the
+            // metadata editor is already usable. Requiring the link here made
+            // valid uploads wait five minutes and fail. The editor container
+            // plus its title and description boxes uniquely identify the page;
+            // the final URL is still required later, before clicking Done.
+            if (state && state.hasMetadataEditor && state.textboxes > 1) {
                 await candidate.setDefaultTimeout(timeout)
                 return candidate
             }
